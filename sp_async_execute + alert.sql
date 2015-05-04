@@ -14,8 +14,9 @@
 -- Note:		Requerido que esté corriendo el servicio SQLSERVERAGENT (SQL Server Agent) y esté configurado Database Mail
 -- =============================================
 ALTER PROCEDURE [dbo].[sp_async_execute]
-	  @sql		NVARCHAR(MAX)
-	, @jobname	VARCHAR(MAX) = NULL
+	  @sql					NVARCHAR(MAX)
+	, @jobname				VARCHAR(MAX) = NULL
+	, @onErrorSendMailTo	NVARCHAR(MAX) = NULL -- En caso de error, enviar un mensaje a...
 AS
 
 SET NOCOUNT ON
@@ -45,18 +46,23 @@ SET @jobname = @jobname + N'_' + CONVERT(NVARCHAR(64), NEWID())
 -- Query
 
 --/*
-DECLARE @jobnameVar VARCHAR(MAX) = REPLACE(@jobname, N'''', N'''''')
+DECLARE @jobnameVar NVARCHAR(MAX) = REPLACE(@jobname, N'''', N'''''')
+DECLARE @SqlVar NVARCHAR(MAX) = REPLACE(@sql, '''', '''''')
 
 SET @sql = N'
 BEGIN TRANSACTION
+DECLARE @Sql NVARCHAR(MAX) = N''' + @SqlVar + N'''
 
 BEGIN TRY
-	' + @sql + N'
+	EXEC sp_executesql @Sql
 	
 	COMMIT
 END TRY
 BEGIN CATCH
 	ROLLBACK
+'
+
+IF (@onErrorSendMailTo IS NOT NULL) SET @sql = @sql + N'
 	DECLARE @BR			NVARCHAR(2)		= CHAR(13) + CHAR(10)
 	DECLARE @ES			NVARCHAR(MAX)	= CONVERT(NVARCHAR(MAX), ERROR_STATE())
 	DECLARE @subject	NVARCHAR(MAX)
@@ -71,13 +77,16 @@ BEGIN CATCH
 						+ @BR + N''DB Name: ' + @dbname + N'''
 						+ @BR + N''Login Name: ' + @LoginName + N'''
 						+ @BR
-						+ @BR + N''Query:'' + @BR + N''' + REPLACE(@sql, '''', '''''') + N'''
+						+ @BR + N''Query:'' + @BR + @Sql
 	
 	EXEC msdb.dbo.sp_send_dbmail
 		  @profile_name	= N''SQLAlerts''
-		, @recipients	= N''eduardo.cuomo@patagonian.it''
+		, @recipients	= N''' + @onErrorSendMailTo + N'''
 		, @subject		= @subject
 		, @body			= @body
+'
+
+SET @sql = @sql + N'
 END CATCH
 '
 --*/
