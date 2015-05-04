@@ -27,7 +27,10 @@ DECLARE @id			UNIQUEIDENTIFIER
 DECLARE @dbname		NVARCHAR(128) = DB_NAME()
 DECLARE @ReturnCode	INT = 0
 
-DECLARE @CategiryName VARCHAR(MAX) = 'async'
+DECLARE @SpName			NVARCHAR(MAX) = N'sp_async_execute'
+DECLARE @CategiryName	NVARCHAR(MAX) = N'async'
+DECLARE @Operator		NVARCHAR(MAX) = N'Sistemas'
+DECLARE @LoginName		NVARCHAR(MAX) = N'sa'
 
 -- ----------------------------------------------------------------------------
 -- Job Name
@@ -60,11 +63,13 @@ BEGIN CATCH
 	DECLARE @body		NVARCHAR(MAX)
 	
 	SELECT
-		  @subject	= N''[sp_async_execute] Error "' + @jobnameVar + N'" ('' + @ES + N'')''
+		  @subject	= N''[' + @SpName + N'] Error "' + @jobnameVar + N'" ('' + @ES + N'')''
 		, @body		= N''Job Name: ' + @jobnameVar + N'''
 						+ @BR + N''ErrorSeverity: '' + CONVERT(NVARCHAR(MAX), ERROR_SEVERITY())
 						+ @BR + N''ErrorState: '' + @ES
 						+ @BR + N''ErrorMessage: '' + ERROR_MESSAGE()
+						+ @BR + N''DB Name: ' + @dbname + N'''
+						+ @BR + N''Login Name: ' + @LoginName + N'''
 						+ @BR
 						+ @BR + N''Query:'' + @BR + N''' + REPLACE(@sql, '''', '''''') + N'''
 	
@@ -89,16 +94,19 @@ IF NOT EXISTS ( SELECT name FROM msdb.dbo.syscategories WHERE name = @CategiryNa
 -- ----------------------------------------------------------------------------
 -- Job
 
+DECLARE @description NVARCHAR(MAX)
+SELECT @description = 'Creado dinámicamente desde SP [' + @SpName + N']'
+
 -- Create a new job, get job ID
 EXECUTE msdb.dbo.sp_add_job
 	  @jobname
-	, @delete_level					= 3 -- 3: Eliminar cuando termine | https://msdn.microsoft.com/es-AR/library/ms182079.aspx
-	, @owner_login_name				= 'sa'
-	, @notify_email_operator_name	= 'Sistemas'
-	, @notify_level_email			= 2 -- 2: En caso de error | https://msdn.microsoft.com/es-AR/library/ms182079.aspx
 	, @job_id						= @id OUTPUT
-	, @description					= 'Creado automáticamente desde [sp_async_execute]'
-	, @category_name				= 'async'
+	, @delete_level					= 3 -- 3: Eliminar cuando termine | https://msdn.microsoft.com/es-AR/library/ms182079.aspx
+	, @owner_login_name				= @LoginName
+	, @notify_email_operator_name	= @Operator
+	, @notify_level_email			= 2 -- 2: En caso de error | https://msdn.microsoft.com/es-AR/library/ms182079.aspx
+	, @description					= @description
+	, @category_name				= @CategiryName
 
 -- Specify a job server for the job
 EXECUTE msdb.dbo.sp_add_jobserver
@@ -107,7 +115,7 @@ EXECUTE msdb.dbo.sp_add_jobserver
 -- Specify a first step of the job - the SQL command
 EXECUTE msdb.dbo.sp_add_jobstep
 	  @job_id				= @id
-	, @step_name			= 'Step1'
+	, @step_name			= 'Step 1: Run Query'
 	, @command				= @sql
 	, @database_name		= @dbname
 	, @on_success_action	= 3 -- En caso de error, siguiente paso | https://msdn.microsoft.com/en-us/library/ms187358.aspx
